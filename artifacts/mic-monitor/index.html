@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor — live mic thru</title>
+<style>
+  :root{
+    --bg:#131517; --panel:#1c1f22; --panel-hi:#262a2e; --rule:#31363b;
+    --ink:#e9e7e2; --dim:#7e868d; --amber:#ffb03a;
+    --led-lo:#3fbf78; --led-mid:#ffb03a; --led-hi:#ff5340;
+    --label:"Arial Narrow","Helvetica Neue",Inter,system-ui,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:radial-gradient(120% 90% at 50% -20%,#1b1f23 0%,var(--bg) 60%);
+    color:var(--ink);font-family:var(--mono);display:flex;align-items:center;justify-content:center;padding:24px 16px}
+  .rack{width:100%;max-width:640px}
+  .panel{background:linear-gradient(180deg,var(--panel-hi) 0%,var(--panel) 14%,var(--panel) 100%);
+    border:1px solid var(--rule);border-radius:4px;
+    box-shadow:0 1px 0 #3b4147 inset,0 18px 40px -24px #000;overflow:hidden}
+
+  header{display:flex;align-items:baseline;gap:14px;padding:16px 20px 14px;border-bottom:1px solid var(--rule)}
+  h1{font-family:var(--label);font-size:20px;letter-spacing:.34em;text-transform:uppercase;margin:0;font-weight:700}
+  .sub{font-size:11px;color:var(--dim);letter-spacing:.12em;text-transform:uppercase}
+  .lamp{margin-left:auto;display:flex;align-items:center;gap:8px;font-family:var(--label);
+    font-size:11px;letter-spacing:.28em;color:var(--dim);text-transform:uppercase}
+  .lamp i{width:9px;height:9px;border-radius:50%;background:#3a4046;box-shadow:0 0 0 1px #000 inset;display:block}
+  body.live .lamp{color:var(--amber)}
+  body.live .lamp i{background:var(--amber);box-shadow:0 0 10px 1px rgba(255,176,58,.7)}
+  @media (prefers-reduced-motion:no-preference){body.live .lamp i{animation:blink 1.8s ease-in-out infinite}}
+  @keyframes blink{50%{opacity:.45}}
+
+  .body{padding:18px 20px 20px;display:grid;gap:16px}
+  .banner{font-size:12px;line-height:1.55;padding:11px 13px;border-radius:3px;margin:0;
+    color:#ffd7d1;background:#2a1614;border:1px solid #5c2a24}
+  .banner b{color:#fff;font-weight:600}
+  .banner code{background:#0c0e0f;padding:1px 5px;border-radius:2px;font-size:11px;color:var(--ink)}
+  .tip{font-size:12px;line-height:1.55;color:var(--dim);border-left:2px solid var(--amber);padding:2px 0 2px 10px;margin:0}
+  .tip b{color:var(--ink);font-weight:600}
+
+  .field{display:grid;gap:6px}
+  .cap{font-family:var(--label);font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--dim)}
+  select{width:100%;appearance:none;
+    background:#101214 url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M0 0h10L5 6z' fill='%237e868d'/></svg>") no-repeat right 12px center;
+    color:var(--ink);font-family:var(--mono);font-size:13px;border:1px solid var(--rule);border-radius:3px;padding:10px 32px 10px 12px}
+  select:disabled{color:#5c646b;opacity:1}
+  select:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+  .hint{font-size:11px;line-height:1.5;color:#5c646b}
+  .allow{font-family:var(--label);font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;
+    background:var(--amber);color:#1a1408;border:0;border-radius:3px;padding:7px 12px;cursor:pointer;
+    margin-top:6px;display:inline-block}
+  .allow:hover{background:#ffc164}
+
+  .meters{background:#0c0e0f;border:1px solid var(--rule);border-radius:3px;padding:12px 12px 8px}
+  .row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .row .ch{font-family:var(--label);font-size:11px;letter-spacing:.2em;color:var(--dim);width:16px}
+  .track{position:relative;flex:1;height:14px;background:#17191b;border-radius:2px;overflow:hidden}
+  .track::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(90deg,transparent 0 6px,#0c0e0f 6px 8px)}
+  .fill{position:absolute;left:0;top:0;bottom:0;width:0%;
+    background:linear-gradient(90deg,var(--led-lo) 0%,var(--led-lo) 62%,var(--led-mid) 78%,var(--led-hi) 94%)}
+  .peak{position:absolute;top:0;bottom:0;width:2px;background:var(--ink);opacity:.85;left:0;display:none}
+  .scale{display:flex;justify-content:space-between;font-size:10px;color:#5c646b;padding-left:26px}
+
+  .transport{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  button.go{font-family:var(--label);font-size:14px;letter-spacing:.24em;text-transform:uppercase;font-weight:700;
+    color:var(--ink);background:linear-gradient(180deg,#33383d,#22262a);border:1px solid #444a50;border-top-color:#565d64;
+    border-radius:3px;padding:13px 20px;cursor:pointer;display:flex;align-items:center;gap:10px;justify-content:center}
+  button.go:hover{background:linear-gradient(180deg,#3a4046,#272b30)}
+  button.go:active{transform:translateY(1px)}
+  button.go:disabled{opacity:.45;cursor:not-allowed}
+  button.go i{width:8px;height:8px;border-radius:50%;background:#4b5157}
+  body.live button.go.main{border-color:#6a4d18;background:linear-gradient(180deg,#3b3220,#241f16)}
+  body.live button.go.main i{background:var(--amber);box-shadow:0 0 8px rgba(255,176,58,.8)}
+  button.go.alt{font-size:11px;letter-spacing:.2em;padding:13px 14px}
+  .vol{flex:1;min-width:150px;display:grid;gap:6px}
+  input[type=range]{width:100%;accent-color:var(--amber);background:transparent}
+
+  .readout{display:flex;flex-wrap:wrap;gap:8px 22px;align-items:center;border-top:1px solid var(--rule);
+    padding-top:14px;font-size:12px;color:var(--dim)}
+  .readout b{color:var(--ink);font-weight:600}
+  .big{font-size:22px;color:var(--amber);font-variant-numeric:tabular-nums}
+
+  .chain{font-size:12px;line-height:1.6;color:var(--dim);min-height:18px;word-break:break-word;margin:0}
+  .chain b{color:var(--ink);font-weight:600}
+  details.diag{border-top:1px solid var(--rule);padding-top:12px}
+  details.diag summary{font-family:var(--label);font-size:11px;letter-spacing:.26em;text-transform:uppercase;
+    color:var(--dim);cursor:pointer}
+  details.diag pre{font-size:11px;line-height:1.55;color:#8b939a;background:#0c0e0f;border:1px solid var(--rule);
+    border-radius:3px;padding:10px;margin:10px 0 0;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  footer{font-size:11px;color:#5c646b;text-align:center;margin-top:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<div class="rack">
+  <div class="panel">
+    <header>
+      <h1>Monitor</h1><span class="sub">mic&nbsp;thru</span>
+      <span class="lamp"><i></i>Live</span>
+    </header>
+
+    <div class="body">
+      <p class="banner" id="alert" role="alert" hidden></p>
+      <p class="tip"><b>Wear headphones.</b> Speakers plus an open mic will feed back within seconds.</p>
+
+      <div class="field">
+        <label class="cap" for="input">Input</label>
+        <select id="input"><option>Checking…</option></select>
+        <span class="hint" id="hint"></span>
+      </div>
+
+      <div class="field">
+        <label class="cap" for="output">Output</label>
+        <select id="output"><option value="">System default</option></select>
+        <span class="hint" id="sinkHint"></span>
+      </div>
+
+      <div class="meters">
+        <div id="bars"></div>
+        <div class="scale"><span>−60</span><span>−36</span><span>−18</span><span>−6</span><span>0 dBFS</span></div>
+      </div>
+
+      <div class="transport">
+        <button class="go main" id="go"><i></i><span>Start monitoring</span></button>
+        <button class="go alt" id="tone">Test tone</button>
+        <div class="vol">
+          <label class="cap" for="vol">Volume <span id="volVal">80%</span></label>
+          <input type="range" id="vol" min="0" max="1.5" step="0.01" value="0.8">
+        </div>
+      </div>
+
+      <div class="readout">
+        <span>Round trip <b class="big" id="lat">—</b> ms</span>
+        <span>in <b id="latIn">—</b> · out <b id="latOut">—</b></span>
+      </div>
+
+      <p class="chain" id="chain" aria-live="polite">Pick an input, then start. Nothing is recorded or sent anywhere.</p>
+
+      <details class="diag"><summary>Log</summary><pre id="log"></pre></details>
+    </div>
+  </div>
+  <footer>Echo cancellation, noise suppression and auto gain stay off: in a thru-monitor the browser's<br>
+  reference signal is your own mic, so cancellation eats the audio. Raw is also the lowest latency.</footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+  const AC = window.AudioContext || window.webkitAudioContext;
+  const MEDIA = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  const CAN_ROUTE = !!(AC && 'setSinkId' in AC.prototype);   // Chrome/Edge 110+ only
+  const DEFAULT = 'System default';
+
+  // Browser DSP, deliberately all off. Echo cancellation in particular must stay
+  // off: the render stream here IS the mic signal, so the AEC cancels it away.
+  // Flip noiseSuppression/autoGainControl to true if you ever want them.
+  const DSP = { echoCancellation:false, noiseSuppression:false, autoGainControl:false };
+
+  const state = { ctx:null, stream:null, gain:null, raf:0, timer:0, meters:[], peaks:[], names:{} };
+
+  const esc = s => String(s).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+  const lines = [];
+  function log(msg) {
+    lines.push(new Date().toTimeString().slice(0,8) + '  ' + msg);
+    if (lines.length > 50) lines.shift();
+    $('log').textContent = lines.join('\n');
+  }
+  const warn = html => { $('alert').hidden = false; $('alert').innerHTML = html; };
+  const clearWarn = () => { $('alert').hidden = true; };
+
+  /* ── devices ─────────────────────────────────────────────────────────
+     Names and IDs stay blank until the user grants mic access once for
+     this origin, so an empty list means "ask", not "no devices".        */
+
+  function displayName(d) {
+    if (d.deviceId === 'default') return DEFAULT;
+    return (d.label || 'Unnamed device').replace(/^Default\s+-\s+/, '');
+  }
+
+  async function refresh() {
+    if (!MEDIA) return;
+    let devs;
+    try { devs = await navigator.mediaDevices.enumerateDevices(); }
+    catch (e) { log('enumerateDevices failed: ' + e.name); return; }
+
+    // 'communications' is a Windows duplicate of an existing device; drop it.
+    const usable = kind => devs.filter(d =>
+      d.kind === kind && d.label && d.deviceId && d.deviceId !== 'communications');
+    const ins = usable('audioinput'), outs = usable('audiooutput');
+
+    state.names = {};
+    [...ins, ...outs].forEach(d => { state.names[d.deviceId] = displayName(d); });
+    log(`devices: ${ins.length} in, ${outs.length} out`);
+
+    if (!ins.length) return askPermission(devs.some(d => d.kind === 'audioinput'));
+
+    $('hint').textContent = '';
+    fill($('input'), ins);
+    if (CAN_ROUTE) fill($('output'), outs);
+  }
+
+  function fill(sel, devs) {
+    const prev = sel.value;
+    sel.innerHTML = '';
+    // Guarantee a default entry even where the browser exposes no 'default' device.
+    if (!devs.some(d => d.deviceId === 'default')) sel.appendChild(new Option(DEFAULT, ''));
+    for (const d of devs) sel.appendChild(new Option(state.names[d.deviceId], d.deviceId));
+    if ([...sel.options].some(o => o.value === prev)) sel.value = prev;
+    sel.disabled = false;
+  }
+
+  function askPermission(anyMic) {
+    $('input').disabled = true;
+    $('input').innerHTML = `<option>${anyMic ? 'Names hidden until access is allowed' : 'No microphone found'}</option>`;
+    $('output').disabled = true;
+    if (!anyMic) { $('hint').textContent = 'No audio input is connected.'; return; }
+    $('hint').innerHTML =
+      'The browser hides every device name until the microphone is allowed once for this origin. '
+      + '<button class="allow" id="grant">Allow microphone access</button>';
+    $('grant').onclick = grant;
+  }
+
+  async function grant() {
+    log('requesting permission');
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      clearWarn();
+      await refresh();
+    } catch (e) { fail(e, 'permission request'); }
+  }
+
+  /* ── meters ────────────────────────────────────────────────────────── */
+
+  function buildBars(n) {
+    $('bars').innerHTML = (n === 2 ? ['L','R'] : ['M']).map(c =>
+      `<div class="row"><span class="ch">${c}</span>
+       <span class="track"><span class="fill"></span><span class="peak"></span></span></div>`).join('');
+  }
+
+  const dbToPct = db => Math.max(0, Math.min(100, (db + 60) / 60 * 100));
+
+  function draw() {
+    const fills = document.querySelectorAll('.fill'), marks = document.querySelectorAll('.peak');
+    state.meters.forEach((an, i) => {
+      const buf = an._buf;
+      an.getFloatTimeDomainData(buf);
+      let sum = 0, max = 0;
+      for (let s = 0; s < buf.length; s++) {
+        const v = buf[s], a = v < 0 ? -v : v;
+        sum += v * v; if (a > max) max = a;
+      }
+      fills[i].style.width = dbToPct(20 * Math.log10(Math.sqrt(sum / buf.length) + 1e-9)).toFixed(1) + '%';
+      const pk = dbToPct(20 * Math.log10(max + 1e-9));
+      state.peaks[i] = pk > state.peaks[i] ? pk : Math.max(0, state.peaks[i] - 0.6);
+      marks[i].style.display = state.peaks[i] > 1 ? 'block' : 'none';
+      marks[i].style.left = `calc(${state.peaks[i].toFixed(1)}% - 2px)`;
+    });
+    state.raf = requestAnimationFrame(draw);
+  }
+
+  /* ── monitoring ────────────────────────────────────────────────────── */
+
+  async function start() {
+    clearWarn();
+    await stop();
+    if (!MEDIA) return fail({ name:'Unsupported' }, 'start');
+
+    const wanted = $('input').disabled ? '' : $('input').value;
+    const id = { deviceId:{ exact:wanted } };
+
+    // Some drivers reject one of the flags outright, so relax step by step rather
+    // than letting a single unsupported constraint kill the attempt. Order keeps
+    // echoCancellation:false for as long as possible — the bare fallback means
+    // browser defaults, and Chrome defaults cancellation ON.
+    const ladder = [];
+    if (wanted) ladder.push(['device + all flags', { audio: Object.assign({}, id, DSP) }]);
+    if (wanted) ladder.push(['device + no cancellation', { audio: Object.assign({}, id, { echoCancellation:false }) }]);
+    ladder.push(['all flags',                      { audio: Object.assign({}, DSP) }]);
+    ladder.push(['no cancellation',                { audio: { echoCancellation:false } }]);
+    ladder.push(['browser defaults',               { audio: true }]);
+
+    let err = null;
+    for (const [tier, constraints] of ladder) {
+      try {
+        state.stream = await navigator.mediaDevices.getUserMedia(constraints);
+        log('stream open — ' + tier);
+        err = null;
+        break;
+      } catch (e) {
+        err = e;
+        log(`  ${tier} rejected: ${e.name}${e.constraint ? ' — constraint "' + e.constraint + '"' : ''}`);
+        if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break;
+      }
+    }
+    if (err) return fail(err, 'getUserMedia');
+
+    const track = state.stream.getAudioTracks()[0];
+    if (!track) return fail({ name:'NoTrack' }, 'start');
+    track.addEventListener('ended', () => {
+      log('input track ended — device removed');
+      warn('<b>The input device disappeared.</b> It was unplugged or taken over by another program. Pick a device and start again.');
+      stop();
+    });
+    await refresh();                       // names are readable now
+
+    const set = track.getSettings ? track.getSettings() : {};
+    if (set.deviceId && [...$('input').options].some(o => o.value === set.deviceId)) $('input').value = set.deviceId;
+
+    try {
+      // Matching the device sample rate avoids a resampler in the path.
+      try { state.ctx = new AC({ latencyHint:'interactive', sampleRate:set.sampleRate }); }
+      catch { state.ctx = new AC({ latencyHint:'interactive' }); }
+      await state.ctx.resume();
+      log(`context ${state.ctx.sampleRate} Hz, ${state.ctx.state}`);
+      await applySink();
+
+      const src = state.ctx.createMediaStreamSource(state.stream);
+      state.gain = state.ctx.createGain();
+      state.gain.gain.value = parseFloat($('vol').value);
+
+      const ch = Math.min(2, set.channelCount || 1);
+      buildBars(ch);
+      const split = state.ctx.createChannelSplitter(2);
+      src.connect(split);
+      state.meters = []; state.peaks = [];
+      for (let i = 0; i < ch; i++) {
+        const an = state.ctx.createAnalyser();
+        an.fftSize = 1024;
+        an._buf = new Float32Array(an.fftSize);
+        split.connect(an, i);
+        state.meters.push(an); state.peaks.push(0);
+      }
+      // Straight to the destination: no <audio> element, which would add buffering.
+      src.connect(state.gain).connect(state.ctx.destination);
+
+      document.body.classList.add('live');
+      $('go').querySelector('span').textContent = 'Stop';
+      report(track);
+      draw();
+      state.timer = setInterval(showLatency, 500);
+      showLatency();
+    } catch (e) { fail(e, 'audio graph'); }
+  }
+
+  async function stop() {
+    cancelAnimationFrame(state.raf);
+    clearInterval(state.timer);
+    if (state.stream) state.stream.getTracks().forEach(t => t.stop());
+    if (state.ctx) { try { await state.ctx.close(); } catch {} }
+    state.stream = state.ctx = state.gain = null;
+    state.meters = [];
+    document.querySelectorAll('.fill').forEach(f => f.style.width = '0%');
+    document.querySelectorAll('.peak').forEach(p => p.style.display = 'none');
+    document.body.classList.remove('live');
+    $('go').querySelector('span').textContent = 'Start monitoring';
+  }
+
+  async function applySink() {
+    if (!state.ctx || !CAN_ROUTE || $('output').disabled) return;
+    const id = $('output').value;
+    try { await state.ctx.setSinkId(id); }
+    catch (e) { log('output refused: ' + e.name); }
+  }
+
+  const outputName = () => (state.ctx && state.names[state.ctx.sinkId]) || DEFAULT;
+
+  function report(track) {
+    const set = track.getSettings ? track.getSettings() : {};
+    const input = state.names[set.deviceId] || (track.label || '').replace(/^Default\s+-\s+/, '') || 'unknown device';
+    $('chain').innerHTML =
+      `IN <b>${esc(input)}</b> ▸ OUT <b>${esc(outputName())}</b><br>` +
+      `${set.sampleRate || state.ctx.sampleRate} Hz · ${set.channelCount === 2 ? 'stereo' : 'mono'} · ${dspState(set)}`;
+  }
+
+  // getSettings() reports what the browser really applied — trust it over the request.
+  function dspState(set) {
+    const on = ['echoCancellation','noiseSuppression','autoGainControl'].filter(k => set[k] === true);
+    if (!on.length) return 'raw';
+    return set.echoCancellation === true
+      ? '<b style="color:#ff8a7a">echo cancellation active — audio will chop</b>'
+      : on.join(' + ') + ' active';
+  }
+
+  function showLatency() {
+    if (!state.ctx) return;
+    const track = state.stream && state.stream.getAudioTracks()[0];
+    const set = track && track.getSettings ? track.getSettings() : {};
+    const inMs = (set.latency || 0) * 1000;
+    const outMs = ((state.ctx.baseLatency || 0) + (state.ctx.outputLatency || 0)) * 1000;
+    $('latIn').textContent = inMs ? inMs.toFixed(1) + ' ms' : 'n/a';
+    $('latOut').textContent = outMs.toFixed(1) + ' ms';
+    $('lat').textContent = (inMs + outMs).toFixed(1);
+  }
+
+  /* ── test tone: checks the output path without touching the mic ────── */
+
+  async function tone() {
+    if (!AC) return;
+    clearWarn();
+    try {
+      const ctx = new AC({ latencyHint:'interactive' });
+      await ctx.resume();
+      if (CAN_ROUTE && !$('output').disabled) { try { await ctx.setSinkId($('output').value); } catch {} }
+      const osc = ctx.createOscillator(), g = ctx.createGain();
+      osc.frequency.value = 440;
+      g.gain.value = 0.0001;
+      osc.connect(g).connect(ctx.destination);
+      osc.start();
+      g.gain.exponentialRampToValueAtTime(0.15 * (parseFloat($('vol').value) || 1), ctx.currentTime + 0.02);
+      g.gain.setTargetAtTime(0.0001, ctx.currentTime + 1.2, 0.05);
+      setTimeout(() => { osc.stop(); ctx.close().catch(() => {}); }, 1800);
+      const where = state.names[ctx.sinkId] || DEFAULT;
+      log('tone 440 Hz → ' + where);
+      $('chain').innerHTML = `440 Hz test tone ▸ <b>${esc(where)}</b>. If you hear it, the output path is fine.`;
+    } catch (e) { fail(e, 'test tone'); }
+  }
+
+  /* ── failures ──────────────────────────────────────────────────────── */
+
+  function fail(e, where) {
+    const name = (e && e.name) || 'Error';
+    warn({
+      NotAllowedError:'<b>Microphone access is blocked.</b> Open the mic icon in the address bar, set it to Allow, then reload.',
+      NotFoundError:'<b>No microphone matched.</b> Plug one in, or choose a different device.',
+      NotReadableError:'<b>The device is busy.</b> Another program holds it exclusively — close it and try again.',
+      OverconstrainedError:'<b>The device refused every request.</b> The log names the constraint it rejected.',
+      AbortError:'<b>The device would not start.</b> Reconnect it, or choose another.',
+      SecurityError:'<b>Insecure origin.</b> Microphones need https or localhost.',
+      Unsupported:'<b>No microphone API here.</b> Browsers expose it only on https, localhost or file URLs.',
+      NoTrack:'<b>The stream carried no audio track.</b> Choose a different device.'
+    }[name] || `<b>${esc(name)} during ${esc(where)}.</b> ${esc((e && e.message) || '')}`);
+    log(`FAIL ${where}: ${name}`);
+    stop();
+  }
+
+  /* ── wiring ────────────────────────────────────────────────────────── */
+
+  $('go').onclick = () => state.ctx ? stop() : start();
+  $('tone').onclick = tone;
+  $('vol').oninput = e => {
+    $('volVal').textContent = Math.round(e.target.value * 100) + '%';
+    if (state.gain && state.ctx) state.gain.gain.setTargetAtTime(+e.target.value, state.ctx.currentTime, 0.01);
+  };
+  $('input').onchange = () => { if (state.ctx) start(); };
+  $('output').onchange = async () => {
+    if (!state.ctx) return;
+    await applySink();
+    report(state.stream.getAudioTracks()[0]);
+  };
+  if (MEDIA && navigator.mediaDevices.addEventListener)
+    navigator.mediaDevices.addEventListener('devicechange', refresh);
+  window.addEventListener('pagehide', stop);
+
+  /* ── boot ──────────────────────────────────────────────────────────── */
+
+  buildBars(1);
+  log(`${location.origin || location.protocol} · secure ${window.isSecureContext} · output routing ${CAN_ROUTE ? 'available' : 'unavailable'}`);
+
+  if (!CAN_ROUTE) {
+    $('output').disabled = true;
+    $('output').innerHTML = `<option>${DEFAULT} (not routable here)</option>`;
+    $('sinkHint').textContent = 'Only Chrome and Edge 110+ can send Web Audio to a chosen device. Elsewhere, route the browser in your OS sound settings.';
+  }
+  if (!MEDIA) {
+    $('go').disabled = true;
+    $('input').disabled = true;
+    $('input').innerHTML = '<option>Microphone API unavailable</option>';
+    warn('<b>This page has no microphone API.</b> Browsers expose it only on <code>https://</code>, <code>http://localhost</code> or <code>file://</code> — a plain <code>http://192.168.x.x</code> address will not work.');
+  } else {
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name:'microphone' })
+        .then(p => { p.onchange = refresh; })
+        .catch(() => {});
+    }
+    refresh();
+  }
+})();
+</script>
+</body>
+</html>
